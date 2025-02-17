@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SandboxAI</title>
+    <style>
+        /* Ensuring that the HTML and body take up the full viewport height */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Disables scrolling on the body */
+        }
+
+        /* Set up the body as a flex container to neatly organize the content */
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+        }
+
+        /* Title styling */
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-top: 0.5em;
+        }
+
+        /* Container to allow vertical scrolling inside it */
+        #mainContainer {
+            flex: 1;
+            overflow-y: auto; /* Adds scroll bar when necessary */
+            margin: 10px 10% 60px 10%; /* Making space for the fixed chat form */
+            padding: 0;
+        }
+
+        /* Styling for the chat output area */
+        #chatOutput {
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Flexbox for consistent form appearance */
+        form {
+            position: fixed; /* Fixed positioning at the bottom */
+            bottom: 0;
+            left: 10%;
+            right: 10%;
+            display: flex;
+            background: white;
+            padding: 0.5em;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Input and button styling */
+        input[type="text"], input[type="file"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            margin-right: 8px;
+            border-radius: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Styling for user and AI messages */
+        .message-user {
+            text-align: left;
+            background-color: lightskyblue;
+            border-radius: 5px;
+        }
+        .message-ai {
+            text-align: left;
+            color: #555;
+            background-color: lightgray;
+            border-radius: 5px;
+        }
+        .message-content {
+            margin: 10px;
+            font-size: 1em;
+            line-height: 1.4;
+        }
+        
+    </style>
+</head>
+<body>
+    <h1>SandboxAI</h1>
+    <div id="mainContainer">
+        <div id="chatOutput"></div>
+    </div>
+    <form id="chatForm">
+        <input type="text" id="userInput" placeholder="Type your message here..." required>
+        <button type="submit">Send</button>
+    </form>
+    <script>
+        document.getElementById('chatForm').onsubmit = function(event) {
+            event.preventDefault();
+            var userInput = document.getElementById('userInput').value;
+            fetch('/chat', {
+                method: 'POST',
+                body: new URLSearchParams(`message=${userInput}`),
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                const userMessage = `<div class="message-content message-user"><strong>You:</strong> ${userInput}</div>`;
+                // Check if the response starts with a code block indicator
+                let aiMessage;
+                if (data.response.startsWith("```python")) {
+                    const codeContent = data.response.replace(/```python/g, '').replace(/```/g, '');
+                    aiMessage = `<div class="message-content message-ai"><strong>SAI:</strong><pre><code>${codeContent}</code></pre></div>`;
+                } else {
+                    aiMessage = `<div class="message-content message-ai"><strong>SAI:</strong> ${data.response}</div>`;
+                }
+                document.getElementById('chatOutput').innerHTML += `
+                    <div class="response">
+                        ${userMessage}
+                        ${aiMessage}
+                    </div>
+                `;
+                document.getElementById('userInput').value = '';  // Clear input after sending
+                // Scroll to the bottom of the chat output
+                document.getElementById('chatOutput').scrollTop = document.getElementById('chatOutput').scrollHeight;
+            });
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+llama-index
+openai
+tiktoken
+python-dotenv
+llama-index-llms-ollama
+flask
