@@ -61,8 +61,10 @@ def chat():
     ]
 
     def generate():
+        full_response = []  # Accumulate the full AI response here
+        buffer = ""  # Temporary buffer for chunks
+        
         responses = ollama_text_settings.stream_chat(messages)
-        buffer = ""
         
         for r in responses:
             chunk = r.delta.strip()
@@ -75,21 +77,28 @@ def chat():
                 if buffer.endswith('```'):
                     buffer += "\n"
                 yield f"data: {buffer}\n\n"
+                full_response.append(buffer)  # Add to full response
                 buffer = ""
             elif len(buffer) > 200:
                 yield f"data: {buffer}\n\n"
+                full_response.append(buffer)  # Add to full response
                 buffer = ""
             else:
                 buffer += " "
 
+        # Handle any remaining buffer
         if buffer:
             logger.debug(f"Final buffer before saving: {buffer}")  # Log final buffer
             yield f"data: {buffer}\n\n"
-            # Save AI response to MongoDB when complete
+            full_response.append(buffer)  # Add to full response
+
+        # Save the full AI response to MongoDB when streaming is complete
+        full_ai_response = " ".join(full_response).strip()  # Join all chunks into a single string
+        if full_ai_response:
             try:
                 ai_message_data = {
                     'role': 'ai',
-                    'content': buffer.strip(),  # Ensure no extra whitespace
+                    'content': full_ai_response,  # Use the full joined response
                     'timestamp': datetime.utcnow()
                 }
                 logger.debug(f"Attempting to save AI response with chat_id: {chat_id}, data: {ai_message_data}")
@@ -101,7 +110,7 @@ def chat():
                     logger.debug(f"Result type: {type(result)}, modified_count: {getattr(result, 'modified_count', 0)}, inserted_id: {getattr(result, 'inserted_id', None)}")
             except Exception as e:
                 logger.error(f"Error saving AI response: {e}")
-                raise  # Re-raise to see the full stack trace in Flask logs
+                yield f"data: Error saving AI response: {e}\n\n"  # Optionally send error to frontend
         yield "data: [DONE]\n\n"
 
     return Response(generate(), mimetype='text/event-stream')
@@ -144,8 +153,10 @@ def upload_image():
     ]
 
     def generate():
+        full_response = []  # Accumulate the full AI response here
+        buffer = ""  # Temporary buffer for chunks
+        
         responses = ollama_image_settings.stream_chat(messages)
-        buffer = ""
         
         for r in responses:
             chunk = r.delta.strip()
@@ -158,21 +169,28 @@ def upload_image():
                 if buffer.endswith('```'):
                     buffer += "\n"
                 yield f"data: {buffer}\n\n"
+                full_response.append(buffer)  # Add to full response
                 buffer = ""
             elif len(buffer) > 200:
                 yield f"data: {buffer}\n\n"
+                full_response.append(buffer)  # Add to full response
                 buffer = ""
             else:
                 buffer += " "
 
+        # Handle any remaining buffer
         if buffer:
             logger.debug(f"Final buffer before saving: {buffer}")  # Log final buffer
             yield f"data: {buffer}\n\n"
-            # Save AI response to MongoDB when complete
+            full_response.append(buffer)  # Add to full response
+
+        # Save the full AI response to MongoDB when streaming is complete
+        full_ai_response = " ".join(full_response).strip()  # Join all chunks into a single string
+        if full_ai_response:
             try:
                 ai_message_data = {
                     'role': 'ai',
-                    'content': buffer.strip(),  # Ensure no extra whitespace
+                    'content': full_ai_response,  # Use the full joined response
                     'timestamp': datetime.utcnow()
                 }
                 logger.debug(f"Attempting to save AI response with chat_id: {chat_id}, data: {ai_message_data}")
@@ -184,7 +202,7 @@ def upload_image():
                     logger.debug(f"Result type: {type(result)}, modified_count: {getattr(result, 'modified_count', 0)}, inserted_id: {getattr(result, 'inserted_id', None)}")
             except Exception as e:
                 logger.error(f"Error saving AI response: {e}")
-                raise  # Re-raise to see the full stack trace in Flask logs
+                yield f"data: Error saving AI response: {e}\n\n"  # Optionally send error to frontend
         yield "data: [DONE]\n\n"
 
         os.remove(file_path)  # Clean up
