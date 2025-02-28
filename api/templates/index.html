@@ -96,47 +96,12 @@
     </style>
 </head>
 <body>
-    <h1>SandboxAI</h1>
+    <h1>SandboxAI | API is running...</h1>
+    <h3></h3>
     <div id="mainContainer">
         <div id="chatOutput"></div>
     </div>
-    <form id="chatForm">
-        <input type="text" id="userInput" placeholder="Type your message here..." required>
-        <button type="submit">Send</button>
-    </form>
-    <script>
-        document.getElementById('chatForm').onsubmit = function(event) {
-            event.preventDefault();
-            var userInput = document.getElementById('userInput').value;
-            fetch('/chat', {
-                method: 'POST',
-                body: new URLSearchParams(`message=${userInput}`),
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-            })
-            .then(response => response.json())
-            .then(data => {
-                const userMessage = `<div class="message-content message-user"><strong>You:</strong> ${userInput}</div>`;
-                // Check if the response starts with a code block indicator
-                let aiMessage;
-                if (data.response.startsWith("```python")) {
-                    const codeContent = data.response.replace(/```python/g, '').replace(/```/g, '');
-                    aiMessage = `<div class="message-content message-ai"><strong>SAI:</strong><pre><code>${codeContent}</code></pre></div>`;
-                } else {
-                    aiMessage = `<div class="message-content message-ai"><strong>SAI:</strong> ${data.response}</div>`;
-                }
-                document.getElementById('chatOutput').innerHTML += `
-                    <div class="response">
-                        ${userMessage}
-                        ${aiMessage}
-                    </div>
-                `;
-                document.getElementById('userInput').value = '';  // Clear input after sending
-                // Scroll to the bottom of the chat output
-                document.getElementById('chatOutput').scrollTop = document.getElementById('chatOutput').scrollHeight;
-            });
-        };
-    </script>
+    
+    
 </body>
 </html>
