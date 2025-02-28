@@ -4,3 +4,5 @@ tiktoken
 python-dotenv
 llama-index-llms-ollama
 flask
+flask-cors
+pymongo
