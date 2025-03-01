@@ -10,10 +10,10 @@
         if (loading) return; // Prevent deletion while loading
         if (
             !confirm(
-                `Are you sure you want to delete the chat "${availableChats.find((chat) => chat.chat_id === chatId)?.last_message}"?`,
+                `Are you sure you want to delete the chat "${availableChats.find((chat) => chat.chat_id === chatId)?.title}"?`,
             )
         ) {
-            return; // Cancel if user doesn't confirm
+            return; // Cancel if user doesn't confirm, updated to use title
         }
 
         try {
@@ -31,7 +31,7 @@
             await loadChatHistory();
         } catch (error) {
             console.error("Error deleting chat:", error);
-            alert(`Failed to delete chat: ${error.message}`);
+            alert(`Failed to delete chat: {error.message}`);
         }
     }
 
@@ -43,7 +43,7 @@
             availableChats = data.chats || [];
         } catch (error) {
             console.error("Error loading chat history:", error);
-            alert(`Failed to load chat history: ${error.message}`);
+            alert(`Failed to load chat history: {error.message}`);
         }
     }
 
@@ -62,25 +62,20 @@
             <p>No chats available.</p>
         {:else}
             {#each availableChats as chat}
-                <button
-                    class="chat-item"
-                    on:click={() => onSelectChat(chat.chat_id)}
-                    disabled={loading}
-                >
+                <div class="chat-item" on:click={() => onSelectChat(chat.chat_id)}>
                     <span class="chat-text">
-                        {chat.last_message.slice(0, 10) +
-                            (chat.last_message.length > 10 ? "..." : "")}
-                        ({new Date(chat.timestamp).toLocaleString()})
+                        {chat.title}
+                        <!-- ({new Date(chat.timestamp).toLocaleString()}) -->
                     </span>
-                    <span
+                    <button
                         class="delete-button"
-                        on:click|stopPropagation={() =>
-                            deleteChat(chat.chat_id)}
-                        title="Delete this chat"
+                        on:click|stopPropagation={() => deleteChat(chat.chat_id)}
+                        disabled={loading}
+                        aria-label={`Delete chat '${chat.title}' from ${new Date(chat.timestamp).toLocaleString()}`}
                     >
                         ×
-                    </span>
-                </button>
+                    </button>
+                </div>
             {/each}
         {/if}
     </div>
@@ -119,7 +114,6 @@
         border-radius: 3px;
         text-align: left;
         cursor: pointer;
-        overflow-wrap: break-word; /* Handle long text */
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -137,7 +131,7 @@
 
     .chat-text {
         flex: 1;
-        margin-right: 0.5em; /* Space for the delete button */
+        margin-right: 1em; /* Increased space for the delete button */
         white-space: nowrap; /* Prevent text wrapping */
         overflow: hidden; /* Hide overflow */
         text-overflow: ellipsis; /* Show ellipsis for truncated text */
@@ -151,9 +145,13 @@
         border-radius: 3px;
         cursor: pointer;
         font-size: 0.8em;
-        opacity: 0.8;
+        opacity: 0; /* Hidden by default */
         transition: opacity 0.2s;
-        display: none; /* Hidden by default */
+        width: 1.5em; /* Fixed width for consistency */
+        height: 1.5em; /* Fixed height for consistency */
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .delete-button:hover:not(:disabled) {
@@ -166,7 +164,7 @@
     }
 
     .chat-item:hover .delete-button {
-        display: inline-flex; /* Show on hover */
+        opacity: 1; /* Show on hover */
     }
 
     button {

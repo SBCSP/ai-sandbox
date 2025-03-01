@@ -1,0 +1,73 @@
+# version: '3.8'
+
+services:
+  ai-sandbox:
+    build:
+      context: ./svelte-ai
+      dockerfile: Dockerfile.svelte
+    ports:
+      - "8080:8080"
+    networks:
+      - ai-sandbox-network
+    # volumes:
+    #   - ./svelte-ai/src:/app/src
+    #   - ./svelte-ai/public:/app/public
+    #   - /app/node_modules  # Prevent volume from overriding node_modules
+    depends_on:
+      - backend
+    environment:
+      - NODE_ENV=development
+
+  backend:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.flaskapi
+    ports:
+      - "5001:5001"
+    networks:
+      - ai-sandbox-network
+    volumes:
+      - ./api:/app
+    depends_on:
+      - minio
+    #   - mongodb
+    environment:
+      # - MONGODB_URI=mongodb://root:example@host.docker.internal:27017/ai_sandbox_db?authSource=admin
+      - OLLAMA_HOST=http://host.docker.internal:11434  # Adjust for your Ollama setup
+
+  minio:
+    image: minio/minio
+    restart: always
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    networks:
+      - ai-sandbox-network
+    volumes:
+      - 'minio_data:/data'
+    environment:
+      - MINIO_ROOT_USER=minio
+      - MINIO_ROOT_PASSWORD=ai-sandbox
+      # - MINIO_DEFAULT_BUCKETS="bucket1,bucket2"
+    command: server --console-address ":9001" /data
+
+networks:
+  ai-sandbox-network:
+    driver: bridge
+
+volumes:
+  minio_data:
+    driver: local
+
+  # mongodb:
+  #   image: mongo:latest
+  #   ports:
+  #     - "27017:27017"
+  #   volumes:
+  #     - mongodb_data:/data/db
+  #   environment:
+  #     - MONGO_INITDB_ROOT_USERNAME=root
+  #     - MONGO_INITDB_ROOT_PASSWORD=example
+
+# volumes:
+#   mongodb_data:
