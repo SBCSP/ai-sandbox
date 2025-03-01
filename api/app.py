@@ -16,10 +16,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Set up MinIO client
-s3 = boto3.client('s3',
-                endpoint_url='http://localhost:9000',
-                aws_access_key_id='Vsy33jISLyeTgdXllJOf',
-                aws_secret_access_key='9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv')
+s3 = boto3.client(
+    's3',
+    endpoint_url='http://localhost:9000',
+    aws_access_key_id='Vsy33jISLyeTgdXllJOf',
+    aws_secret_access_key='9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv'
+)
 
 # Ensure the bucket exists
 BUCKET_NAME = 'ai-sandbox'
@@ -41,6 +43,9 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 mongo_client = MongoClient('mongodb://root:example@localhost:27017/')
 db = mongo_client['ai_sandbox_db']
 chat_history_collection = db['chat_history']
+profile_collection = db['profiles']  # Existing collection for user profiles
+settings_collection = db['settings']  # Existing collection for user settings
+global_settings_collection = db['global_settings']  # New collection for global settings
 
 # Test MongoDB connection
 try:
@@ -303,6 +308,156 @@ def update_chat_history(chat_id, message, title=None):
     except Exception as e:
         logger.error(f"Error updating chat history: {e}")
         raise
+
+@app.route('/profile', methods=['GET', 'PUT'])
+def manage_profile():
+    # For simplicity, assume a single user (no authentication)
+    user_id = 'default_user'
+
+    if request.method == 'GET':
+        profile = profile_collection.find_one({'user_id': user_id})
+        if profile:
+            return jsonify({
+                'name': profile.get('name', 'User Name'),
+                'email': profile.get('email', 'user@example.com'),
+                'joined': profile.get('joined', datetime.utcnow().strftime('%B %Y'))
+            })
+        else:
+            default_profile = {
+                'user_id': user_id,
+                'name': 'User Name',
+                'email': 'user@example.com',
+                'joined': datetime.utcnow().strftime('%B %Y')
+            }
+            profile_collection.insert_one(default_profile)
+            return jsonify(default_profile)
+
+    elif request.method == 'PUT':
+        data = request.get_json()
+        if not data or 'name' not in data or 'email' not in data:
+            return jsonify({'error': 'Missing required fields (name, email)'}), 400
+
+        update_data = {
+            'name': data['name'],
+            'email': data['email'],
+            'joined': profile_collection.find_one({'user_id': user_id}).get('joined', datetime.utcnow().strftime('%B %Y'))
+        }
+        result = profile_collection.update_one(
+            {'user_id': user_id},
+            {'$set': update_data},
+            upsert=True
+        )
+        if result.modified_count > 0 or result.upserted_id:
+            return jsonify(update_data)
+        return jsonify({'message': 'Profile updated or already exists'})
+
+@app.route('/settings', methods=['GET', 'PUT'])
+def manage_settings():
+    # For simplicity, assume a single user (no authentication)
+    user_id = 'default_user'
+
+    if request.method == 'GET':
+        settings = settings_collection.find_one({'user_id': user_id})
+        if settings:
+            return jsonify({
+                'theme': settings.get('theme', 'Light'),
+                'notifications': settings.get('notifications', True)
+            })
+        else:
+            default_settings = {
+                'user_id': user_id,
+                'theme': 'Light',
+                'notifications': True
+            }
+            settings_collection.insert_one(default_settings)
+            return jsonify(default_settings)
+
+    elif request.method == 'PUT':
+        data = request.get_json()
+        if not data or 'theme' not in data or 'notifications' not in data:
+            return jsonify({'error': 'Missing required fields (theme, notifications)'}), 400
+
+        update_data = {
+            'theme': data['theme'],
+            'notifications': bool(data['notifications'])
+        }
+        result = settings_collection.update_one(
+            {'user_id': user_id},
+            {'$set': update_data},
+            upsert=True
+        )
+        if result.modified_count > 0 or result.upserted_id:
+            return jsonify(update_data)
+        return jsonify({'message': 'Settings updated or already exists'})
+
+@app.route('/admin/global_settings', methods=['GET'])
+def get_global_settings():
+    settings = global_settings_collection.find_one({'_id': 'global_settings'})
+    if settings and 'settings' in settings:
+        return jsonify(settings['settings'])
+    else:
+        # Return empty object if no settings exist
+        return jsonify({})
+
+@app.route('/admin/global_settings', methods=['POST'])
+def add_global_setting():
+    data = request.get_json()
+    if not data or 'key' not in data or 'value' not in data:
+        return jsonify({'error': 'Missing required fields (key, value)'}), 400
+
+    key = data['key'].strip()
+    value = data['value'].strip()
+
+    # Check if key already exists
+    settings = global_settings_collection.find_one({'_id': 'global_settings'})
+    if settings and key in settings.get('settings', {}):
+        return jsonify({'error': f'Setting with key "{key}" already exists'}), 400
+
+    if settings:
+        result = global_settings_collection.update_one(
+            {'_id': 'global_settings'},
+            {'$set': {'settings.' + key: value}}
+        )
+    else:
+        result = global_settings_collection.insert_one({
+            '_id': 'global_settings',
+            'settings': {key: value}
+        })
+
+    if result.modified_count > 0 or result.upserted_id:
+        return jsonify({'message': 'Setting added successfully'})
+    return jsonify({'error': 'Failed to add setting'}), 500
+
+@app.route('/admin/global_settings/<key>', methods=['PUT'])
+def update_global_setting(key):
+    data = request.get_json()
+    if not data or 'value' not in data:
+        return jsonify({'error': 'Missing required field (value)'}), 400
+
+    value = data['value'].strip()
+    result = global_settings_collection.update_one(
+        {'_id': 'global_settings'},
+        {'$set': {'settings.' + key: value}}
+    )
+
+    if result.modified_count > 0:
+        return jsonify({'message': 'Setting updated successfully'})
+    return jsonify({'error': 'Setting not found or no changes made'}), 404
+
+@app.route('/admin/global_settings/<key>', methods=['DELETE'])
+def delete_global_setting(key):
+    result = global_settings_collection.update_one(
+        {'_id': 'global_settings'},
+        {'$unset': {'settings.' + key: ''}}
+    )
+
+    if result.modified_count > 0:
+        # Clean up empty settings object if all keys are removed
+        settings = global_settings_collection.find_one({'_id': 'global_settings'})
+        if not settings.get('settings', {}):
+            global_settings_collection.delete_one({'_id': 'global_settings'})
+        return jsonify({'message': 'Setting deleted successfully'})
+    return jsonify({'error': 'Setting not found'}), 404
 
 @app.route('/history', methods=['GET'])
 def get_history():

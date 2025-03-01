@@ -2,6 +2,9 @@
     import { marked } from "marked";
     import { onMount } from "svelte";
     import ChatSidebar from "./components/ChatSidebar.svelte"; // Import the sidebar component
+    import Profile from "./components/Profile.svelte"; // Import Profile component
+    import Settings from "./components/Settings.svelte"; // Import Settings component
+    import Admin from "./components/Admin.svelte"; // Import Admin component
 
     let message = "";
     let currentResponse = "";
@@ -11,6 +14,7 @@
     let fileInput;
     let chatId = localStorage.getItem("chatId") || ""; // Load or initialize chat_id from localStorage
     let availableChats = []; // Store list of past chats
+    let selectedOption = ''; // Track selected option (Profile/Settings/Admin)
 
     function parseMarkdown(text) {
         return marked.parse(text, { breaks: true, gfm: true });
@@ -56,6 +60,7 @@
                 }));
                 localStorage.setItem("chatId", chatId); // Update current chat_id
                 this.chatId = chatId; // Update state
+                selectedOption = ''; // Clear selected option when loading a chat
             }
             await loadChatHistory(); // Update sidebar after loading a chat
         } catch (error) {
@@ -75,6 +80,7 @@
                 chatHistory = [];
                 localStorage.removeItem("chatId");
                 chatId = "";
+                selectedOption = ''; // Clear selected option when clearing chat
                 await loadChatHistory(); // Refresh available chats after clearing
             }
         } catch (error) {
@@ -88,6 +94,7 @@
         localStorage.removeItem("chatId");
         chatId = crypto.randomUUID();
         localStorage.setItem("chatId", chatId);
+        selectedOption = ''; // Clear selected option when starting new chat
         await loadChatHistory(); // Refresh available chats after starting new chat
     }
 
@@ -97,6 +104,7 @@
         if (!message.trim()) return;
 
         const chatId = initializeChatId(); // Ensure chat_id exists
+        selectedOption = ''; // Clear selected option when submitting a message
         chatHistory = [...chatHistory, { role: "user", content: message }];
         loading = true;
         currentResponse = "";
@@ -171,6 +179,7 @@
         formData.append("file", file);
         formData.append("chat_id", chatId); // Send chat_id with request
 
+        selectedOption = ''; // Clear selected option when submitting an image
         chatHistory = [
             ...chatHistory,
             {
@@ -254,11 +263,24 @@
             await loadChat(chatId); // Load current chat if it exists
         }
     });
+
+    // Handle option selection from sidebar
+    function handleSelectOption(option) {
+        selectedOption = option;
+        chatId = ''; // Clear chat when selecting an option
+        chatHistory = []; // Clear chat history when switching to options
+        currentResponse = ''; // Clear current response
+    }
 </script>
 
 <main>
     <div class="layout">
-        <ChatSidebar {availableChats} onSelectChat={loadChat} {loading} />
+        <ChatSidebar
+            {availableChats}
+            onSelectChat={loadChat}
+            {loading}
+            onSelectOption={handleSelectOption}
+        />
         <div class="chat-area">
             <h1>AI Sandbox</h1>
             <div class="chat-controls">
@@ -270,67 +292,79 @@
                 >
             </div>
             <div class="chat-container" bind:this={chatContainer}>
-                {#each chatHistory as { role, content, image }, i}
-                    <div class="message {role}">
-                        <strong>{role === "user" ? "You" : "AI"}:</strong>
-                        {#if role === "ai"}
-                            <span class="content"
-                                >{@html parseMarkdown(content)}</span
-                            >
-                        {:else}
-                            <span class="content">{content}</span>
-                            {#if image}
-                                  <img
-                                    src={image}
-                                    alt={content.replace("Uploaded image:", "User-uploaded content:")}
-                                    class="preview"
-                                />
+                {#if selectedOption === 'Profile'}
+                    <Profile />
+                {:else if selectedOption === 'Settings'}
+                    <Settings />
+                {:else if selectedOption === 'Admin'}
+                    <Admin />
+                {:else if chatId}
+                    {#each chatHistory as { role, content, image }, i}
+                        <div class="message {role}">
+                            <strong>{role === "user" ? "You" : "AI"}:</strong>
+                            {#if role === "ai"}
+                                <span class="content"
+                                    >{@html parseMarkdown(content)}</span
+                                >
+                            {:else}
+                                <span class="content">{content}</span>
+                                {#if image}
+                                    <img
+                                        src={image}
+                                        alt={content.replace("Uploaded image:", "User-uploaded content:")}
+                                        class="preview"
+                                    />
+                                {/if}
                             {/if}
-                        {/if}
-                    </div>
-                {/each}
-                {#if currentResponse}
-                    <div class="message ai">
-                        <strong>AI:</strong>
-                        <span class="content"
-                            >{@html parseMarkdown(currentResponse)}</span
-                        >
-                    </div>
-                {/if}
-                {#if loading && !currentResponse}
-                    <div class="message ai">
-                        <strong>AI:</strong>
-                        <span class="content">Processing...</span>
-                    </div>
+                        </div>
+                    {/each}
+                    {#if currentResponse}
+                        <div class="message ai">
+                            <strong>AI:</strong>
+                            <span class="content"
+                                >{@html parseMarkdown(currentResponse)}</span
+                            >
+                        </div>
+                    {/if}
+                    {#if loading && !currentResponse}
+                        <div class="message ai">
+                            <strong>AI:</strong>
+                            <span class="content">Processing...</span>
+                        </div>
+                    {/if}
+                {:else}
+                    <p>Type a message, upload an image, or select an option to begin.</p>
                 {/if}
             </div>
-            <form on:submit={handleSubmit}>
-                <input
-                    type="text"
-                    bind:value={message}
-                    placeholder="Type a message"
-                    disabled={loading}
-                />
-                <label
-                    for="image-upload"
-                    class="image-button"
-                    title="Upload an image"
-                >
-                    📷
-                </label>
-                <input
-                    type="file"
-                    id="image-upload"
-                    accept="image/png, image/jpeg, image/gif"
-                    bind:this={fileInput}
-                    on:change={handleImageSubmit}
-                    disabled={loading}
-                    hidden
-                />
-                <button type="submit" disabled={loading}>
-                    {loading ? "Sending..." : "Send"}
-                </button>
-            </form>
+            {#if !selectedOption} <!-- Only show input if not in Profile/Settings/Admin -->
+                <form on:submit={handleSubmit}>
+                    <input
+                        type="text"
+                        bind:value={message}
+                        placeholder="Type a message"
+                        disabled={loading}
+                    />
+                    <label
+                        for="image-upload"
+                        class="image-button"
+                        title="Upload an image"
+                    >
+                        📷
+                    </label>
+                    <input
+                        type="file"
+                        id="image-upload"
+                        accept="image/png, image/jpeg, image/gif"
+                        bind:this={fileInput}
+                        on:change={handleImageSubmit}
+                        disabled={loading}
+                        hidden
+                    />
+                    <button type="submit" disabled={loading}>
+                        {loading ? "Sending..." : "Send"}
+                    </button>
+                </form>
+            {/if}
         </div>
     </div>
 </main>

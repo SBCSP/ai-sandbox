@@ -4,6 +4,7 @@
     export let availableChats = []; // Props for chat history
     export let onSelectChat; // Callback to load a selected chat
     export let loading = false; // Props for loading state
+    export let onSelectOption; // New callback for selecting options (Profile/Settings)
 
     // Function to delete a chat by chat_id
     async function deleteChat(chatId) {
@@ -31,7 +32,7 @@
             await loadChatHistory();
         } catch (error) {
             console.error("Error deleting chat:", error);
-            alert(`Failed to delete chat: {error.message}`);
+            alert(`Failed to delete chat: ${error.message}`);
         }
     }
 
@@ -43,7 +44,7 @@
             availableChats = data.chats || [];
         } catch (error) {
             console.error("Error loading chat history:", error);
-            alert(`Failed to load chat history: {error.message}`);
+            alert(`Failed to load chat history: ${error.message}`);
         }
     }
 
@@ -82,6 +83,20 @@
     <button on:click={() => onSelectChat("")} disabled={loading}
         >Clear Selection</button
     >
+
+    <!-- New Options Section -->
+    <h2 class="options-header">Options</h2>
+    <div class="options-list">
+        <div class="option-item" on:click={() => onSelectOption("Profile")}>
+            Profile
+        </div>
+        <div class="option-item" on:click={() => onSelectOption("Settings")}>
+            Settings
+        </div>
+        <div class="option-item" on:click={() => onSelectOption("Admin")}>
+            Admin
+        </div>
+    </div>
 </div>
 
 <style>
@@ -181,5 +196,31 @@
     button:disabled {
         background-color: #ccc;
         cursor: not-allowed;
+    }
+
+    .options-header {
+        margin-top: 2em;
+        margin-bottom: 0.5em;
+        color: #333;
+        font-size: 1.2em;
+    }
+
+    .options-list {
+        margin-top: 0.5em;
+    }
+
+    .option-item {
+        padding: 0.5em;
+        margin: 0.2em 0;
+        background-color: #fff;
+        border: 1px solid #c06868;
+        border-radius: 3px;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .option-item:hover {
+        background-color: #93b1d5;
     }
 </style>
