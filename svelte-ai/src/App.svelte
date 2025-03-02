@@ -4,7 +4,7 @@
     import ChatSidebar from "./components/ChatSidebar.svelte"; // Import the sidebar component
     import Profile from "./components/Profile.svelte"; // Import Profile component
     import Settings from "./components/Settings.svelte"; // Import Settings component
-    import Admin from "./components/Admin.svelte"; // Import Admin component
+    import AppConfig from "./components/AppConfig.svelte"; // Import AppConfig component
 
     let message = "";
     let currentResponse = "";
@@ -14,7 +14,7 @@
     let fileInput;
     let chatId = localStorage.getItem("chatId") || ""; // Load or initialize chat_id from localStorage
     let availableChats = []; // Store list of past chats
-    let selectedOption = ''; // Track selected option (Profile/Settings/Admin)
+    let selectedOption = ''; // Track selected option (Profile/Settings)
 
     function parseMarkdown(text) {
         return marked.parse(text, { breaks: true, gfm: true });
@@ -282,11 +282,11 @@
             onSelectOption={handleSelectOption}
         />
         <div class="chat-area">
-            <h1>AI Sandbox</h1>
+            <!-- <h1>AI Sandbox</h1> -->
             <div class="chat-controls">
-                <button on:click={clearChat} disabled={loading || !chatId}
+                <!-- <button on:click={clearChat} disabled={loading || !chatId}
                     >Clear Chat</button
-                >
+                > -->
                 <button on:click={startNewChat} disabled={loading}
                     >New Chat</button
                 >
@@ -296,8 +296,8 @@
                     <Profile />
                 {:else if selectedOption === 'Settings'}
                     <Settings />
-                {:else if selectedOption === 'Admin'}
-                    <Admin />
+                {:else if selectedOption === 'AppConfig'}
+                    <AppConfig />
                 {:else if chatId}
                     {#each chatHistory as { role, content, image }, i}
                         <div class="message {role}">
@@ -336,7 +336,7 @@
                     <p>Type a message, upload an image, or select an option to begin.</p>
                 {/if}
             </div>
-            {#if !selectedOption} <!-- Only show input if not in Profile/Settings/Admin -->
+            {#if !selectedOption} <!-- Only show input if not in Profile/Settings -->
                 <form on:submit={handleSubmit}>
                     <input
                         type="text"

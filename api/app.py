@@ -15,29 +15,8 @@ import boto3
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set up MinIO client
-s3 = boto3.client(
-    's3',
-    endpoint_url='http://localhost:9000',
-    aws_access_key_id='Vsy33jISLyeTgdXllJOf',
-    aws_secret_access_key='9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv'
-)
-
-# Ensure the bucket exists
+# Define BUCKET_NAME at the top of the file (can be overridden by config)
 BUCKET_NAME = 'ai-sandbox'
-try:
-    s3.create_bucket(Bucket=BUCKET_NAME)
-except s3.exceptions.BucketAlreadyExists:
-    pass
-except Exception as e:
-    logging.error(f"Error creating bucket: {e}")
-
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:8080"}})
-app.config['UPLOAD_FOLDER'] = 'uploads/'
-app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024
-
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # MongoDB Connection
 mongo_client = MongoClient('mongodb://root:example@localhost:27017/')
@@ -45,14 +24,104 @@ db = mongo_client['ai_sandbox_db']
 chat_history_collection = db['chat_history']
 profile_collection = db['profiles']  # Existing collection for user profiles
 settings_collection = db['settings']  # Existing collection for user settings
-global_settings_collection = db['global_settings']  # New collection for global settings
+global_settings_collection = db['global_settings']  # Collection for global settings
+app_config_collection = db['app_config']  # New collection for app configurations
 
-# Test MongoDB connection
+# Test MongoDB connection and ensure collections exist
 try:
     mongo_client.admin.command('ping')
     logger.debug("Successfully connected to MongoDB")
+    
+    # Ensure the app_config collection exists (create if it doesn't)
+    if 'app_config' not in db.list_collection_names():
+        db.create_collection('app_config')
+        logger.debug("Created app_config collection")
 except Exception as e:
-    logger.error(f"Failed to connect to MongoDB: {e}")
+    logger.error(f"Failed to connect to MongoDB or create app_config collection: {e}")
+    raise  # Re-raise the exception to ensure the app doesn't start if MongoDB is unavailable
+
+# Function to get or initialize S3 client with dynamic settings
+def get_s3_client():
+    try:
+        config = app_config_collection.find_one({"type": "object_storage"})
+        if not config:
+            # Default MinIO settings if no config exists
+            default_config = {
+                "type": "object_storage",
+                "provider": "minio",
+                "endpoint_url": "http://localhost:9000",
+                "access_key": "Vsy33jISLyeTgdXllJOf",
+                "secret_key": "9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv",
+                "bucket_name": BUCKET_NAME  # Default bucket name
+            }
+            app_config_collection.insert_one(default_config)
+            logger.debug("Inserted default object storage config with bucket_name:", BUCKET_NAME)
+            config = default_config
+        else:
+            logger.debug("Loaded object storage config with bucket_name:", config.get("bucket_name", BUCKET_NAME))
+    except Exception as e:
+        # If the collection doesn't exist or there's an error, use default settings
+        logger.error(f"Error accessing app_config collection: {e}")
+        config = {
+            "type": "object_storage",
+            "provider": "minio",
+            "endpoint_url": "http://localhost:9000",
+            "access_key": "Vsy33jISLyeTgdXllJOf",
+            "secret_key": "9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv",
+            "bucket_name": BUCKET_NAME  # Default bucket name
+        }
+
+    return boto3.client(
+        's3',
+        endpoint_url=config["endpoint_url"],
+        aws_access_key_id=config["access_key"],
+        aws_secret_access_key=config["secret_key"]
+    )
+
+# Initialize S3 client as a module-level variable
+s3 = get_s3_client()
+
+# Function to update the S3 client globally
+def update_s3_client():
+    global s3
+    s3 = get_s3_client()
+
+# Function to delete all objects under a specific prefix in MinIO
+def delete_chat_images(chat_id, bucket_name):
+    try:
+        # List all objects with the prefix 'images/{chat_id}/'
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=f"images/{chat_id}/")
+        
+        if 'Contents' in response:
+            # Collect all object keys to delete
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            if objects_to_delete:
+                # Delete all objects in a single batch
+                s3.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
+                logger.info(f"Deleted all images for chat_id {chat_id} from bucket {bucket_name}")
+        else:
+            logger.debug(f"No images found for chat_id {chat_id} in bucket {bucket_name}")
+    except Exception as e:
+        logger.error(f"Error deleting images for chat_id {chat_id}: {e}")
+        raise
+
+# Ensure the bucket exists (use dynamic bucket name from config if available)
+try:
+    config = app_config_collection.find_one({"type": "object_storage"})
+    dynamic_bucket_name = config.get("bucket_name", BUCKET_NAME) if config else BUCKET_NAME
+    s3.create_bucket(Bucket=dynamic_bucket_name)
+    logger.debug(f"Ensured bucket {dynamic_bucket_name} exists")
+except s3.exceptions.BucketAlreadyOwnedByYou:
+    logger.debug(f"Bucket {dynamic_bucket_name} already exists")
+except Exception as e:
+    logging.error(f"Error creating bucket {dynamic_bucket_name}: {e}")
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "http://localhost:8080"}})
+app.config['UPLOAD_FOLDER'] = 'uploads/'
+app.config['MAX_CONTENT_PATH'] = 16 * 1024 * 1024
+
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Ollama Settings
 Settings.llm_text = Ollama(model="qwen2.5:7b", request_timeout=60.0)
@@ -169,15 +238,17 @@ def upload_image():
     chat_id = request.form.get('chat_id', str(uuid.uuid4()))  # Use provided chat_id or generate new
     logging.debug(f"Received chat_id: {chat_id}")
 
-    # Upload to MinIO
+    # Upload to MinIO using dynamic s3 client and bucket name from config
     try:
+        config = app_config_collection.find_one({"type": "object_storage"})
+        bucket_name = config.get("bucket_name", BUCKET_NAME) if config else BUCKET_NAME
         minio_key = f"images/{chat_id}/{filename}"
-        s3.upload_file(file_path, BUCKET_NAME, minio_key)
-        logging.info(f"Uploaded {filename} to MinIO bucket {BUCKET_NAME} with key {minio_key}")
+        s3.upload_file(file_path, bucket_name, minio_key)
+        logging.info(f"Uploaded {filename} to bucket {bucket_name} with key {minio_key}")
     except Exception as e:
-        logging.error(f"Error uploading to MinIO: {e}")
+        logging.error(f"Error uploading to storage: {e}")
         os.remove(file_path)
-        return jsonify({'error': f"Failed to upload to MinIO: {e}"}), 500
+        return jsonify({'error': f"Failed to upload to storage: {e}"}), 500
 
     # Check if the chat exists
     existing_chat = chat_history_collection.find_one({'chat_id': chat_id})
@@ -215,7 +286,7 @@ def upload_image():
             title = f"{base_name}pic"[:15]  # Append 'pic' and truncate to 15
             logging.debug(f"Fallback title based on filename: '{title}'")
 
-    # Save user image upload to MongoDB with MinIO reference
+    # Save user image upload to MongoDB with storage reference
     message_data = {
         'role': 'user',
         'content': f"Uploaded image: {filename}",
@@ -390,75 +461,6 @@ def manage_settings():
             return jsonify(update_data)
         return jsonify({'message': 'Settings updated or already exists'})
 
-@app.route('/admin/global_settings', methods=['GET'])
-def get_global_settings():
-    settings = global_settings_collection.find_one({'_id': 'global_settings'})
-    if settings and 'settings' in settings:
-        return jsonify(settings['settings'])
-    else:
-        # Return empty object if no settings exist
-        return jsonify({})
-
-@app.route('/admin/global_settings', methods=['POST'])
-def add_global_setting():
-    data = request.get_json()
-    if not data or 'key' not in data or 'value' not in data:
-        return jsonify({'error': 'Missing required fields (key, value)'}), 400
-
-    key = data['key'].strip()
-    value = data['value'].strip()
-
-    # Check if key already exists
-    settings = global_settings_collection.find_one({'_id': 'global_settings'})
-    if settings and key in settings.get('settings', {}):
-        return jsonify({'error': f'Setting with key "{key}" already exists'}), 400
-
-    if settings:
-        result = global_settings_collection.update_one(
-            {'_id': 'global_settings'},
-            {'$set': {'settings.' + key: value}}
-        )
-    else:
-        result = global_settings_collection.insert_one({
-            '_id': 'global_settings',
-            'settings': {key: value}
-        })
-
-    if result.modified_count > 0 or result.upserted_id:
-        return jsonify({'message': 'Setting added successfully'})
-    return jsonify({'error': 'Failed to add setting'}), 500
-
-@app.route('/admin/global_settings/<key>', methods=['PUT'])
-def update_global_setting(key):
-    data = request.get_json()
-    if not data or 'value' not in data:
-        return jsonify({'error': 'Missing required field (value)'}), 400
-
-    value = data['value'].strip()
-    result = global_settings_collection.update_one(
-        {'_id': 'global_settings'},
-        {'$set': {'settings.' + key: value}}
-    )
-
-    if result.modified_count > 0:
-        return jsonify({'message': 'Setting updated successfully'})
-    return jsonify({'error': 'Setting not found or no changes made'}), 404
-
-@app.route('/admin/global_settings/<key>', methods=['DELETE'])
-def delete_global_setting(key):
-    result = global_settings_collection.update_one(
-        {'_id': 'global_settings'},
-        {'$unset': {'settings.' + key: ''}}
-    )
-
-    if result.modified_count > 0:
-        # Clean up empty settings object if all keys are removed
-        settings = global_settings_collection.find_one({'_id': 'global_settings'})
-        if not settings.get('settings', {}):
-            global_settings_collection.delete_one({'_id': 'global_settings'})
-        return jsonify({'message': 'Setting deleted successfully'})
-    return jsonify({'error': 'Setting not found'}), 404
-
 @app.route('/history', methods=['GET'])
 def get_history():
     chat_id = request.args.get('chat_id')
@@ -481,10 +483,106 @@ def get_history():
 
 @app.route('/history/<chat_id>', methods=['DELETE'])
 def clear_chat(chat_id):
-    result = chat_history_collection.delete_one({'chat_id': chat_id})
-    if result.deleted_count > 0:
-        return jsonify({'message': 'Chat cleared successfully'})
-    return jsonify({'error': 'Chat not found'}), 404
+    try:
+        # Delete the chat from MongoDB
+        result = chat_history_collection.delete_one({'chat_id': chat_id})
+        if result.deleted_count > 0:
+            # Delete associated images from MinIO using dynamic bucket name
+            config = app_config_collection.find_one({"type": "object_storage"})
+            bucket_name = config.get("bucket_name", BUCKET_NAME) if config else BUCKET_NAME
+            delete_chat_images(chat_id, bucket_name)
+            return jsonify({'message': 'Chat and associated images cleared successfully'})
+        return jsonify({'error': 'Chat not found'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting chat {chat_id}: {e}")
+        return jsonify({'error': f'Failed to clear chat: {e}'}), 500
+
+# New Object Storage Management Routes
+@app.route('/object-storage', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def manage_object_storage():
+    if request.method == 'GET':
+        try:
+            config = app_config_collection.find_one({"type": "object_storage"})
+            if config:
+                logger.debug("Retrieved config from MongoDB:", config)
+                return jsonify({
+                    "provider": config.get("provider", "minio"),
+                    "endpoint_url": config["endpoint_url"],
+                    "access_key": config["access_key"],
+                    "secret_key": config["secret_key"],
+                    "bucket_name": config.get("bucket_name", BUCKET_NAME)
+                })
+            # Return default values if no config exists
+            logger.debug("No config found, returning defaults with bucket_name:", BUCKET_NAME)
+            return jsonify({
+                "provider": "minio",
+                "endpoint_url": "",
+                "access_key": "",
+                "secret_key": "",
+                "bucket_name": BUCKET_NAME
+            })
+        except Exception as e:
+            logger.error(f"Error fetching object storage settings: {e}")
+            return jsonify({
+                "provider": "minio",
+                "endpoint_url": "",
+                "access_key": "",
+                "secret_key": "",
+                "bucket_name": BUCKET_NAME
+            }), 500
+
+    elif request.method == 'POST' or request.method == 'PUT':
+        data = request.get_json()
+        if not data or not all(k in data for k in ["endpoint_url", "access_key", "secret_key", "bucket_name"]):
+            logger.error("Missing required fields in request data:", data)
+            return jsonify({"error": "Missing required fields"}), 400
+
+        provider = data.get("provider", "minio")  # Default to MinIO, can be expanded to S3
+        config_data = {
+            "type": "object_storage",
+            "provider": provider,
+            "endpoint_url": data["endpoint_url"],
+            "access_key": data["access_key"],
+            "secret_key": data["secret_key"],
+            "bucket_name": data["bucket_name"]
+        }
+
+        try:
+            # Ensure the app_config collection exists before any operations
+            if 'app_config' not in db.list_collection_names():
+                db.create_collection('app_config')
+                logger.debug("Created app_config collection")
+
+            # Upsert the config (create or update)
+            logger.debug("Saving config data to MongoDB:", config_data)
+            result = app_config_collection.update_one(
+                {"type": "object_storage"},
+                {"$set": config_data},
+                upsert=True
+            )
+            # Update the S3 client using the function
+            update_s3_client()
+            logger.debug("Object storage settings updated successfully with bucket_name:", data["bucket_name"])
+            return jsonify({"message": "Object storage settings updated", "provider": provider})
+        except Exception as e:
+            logger.error(f"Error saving object storage settings: {e}")
+            return jsonify({"error": f"Failed to save settings: {e}"}), 500
+
+    elif request.method == 'DELETE':
+        try:
+            # Ensure the app_config collection exists before any operations
+            if 'app_config' not in db.list_collection_names():
+                return jsonify({"error": "No object storage settings found"}), 404
+
+            result = app_config_collection.delete_one({"type": "object_storage"})
+            if result.deleted_count > 0:
+                # Update the S3 client using the function
+                update_s3_client()
+                return jsonify({"message": "Object storage settings deleted"})
+            return jsonify({"error": "No object storage settings found"}), 404
+        except Exception as e:
+            logger.error(f"Error deleting object storage settings: {e}")
+            return jsonify({"error": f"Failed to delete settings: {e}"}), 500
 
 if __name__ == '__main__':
     app.run(port=5001)
