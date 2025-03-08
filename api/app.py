@@ -44,39 +44,43 @@ except Exception as e:
 def get_s3_client():
     try:
         config = app_config_collection.find_one({"type": "object_storage"})
-        if not config:
-            # Default MinIO settings if no config exists
+        if not config or "endpoint_url" not in config or not config["endpoint_url"]:
+            # Default MinIO settings if no config exists or endpoint_url is invalid
             default_config = {
                 "type": "object_storage",
                 "provider": "minio",
                 "endpoint_url": "http://localhost:9000",
                 "access_key": "Vsy33jISLyeTgdXllJOf",
                 "secret_key": "9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv",
-                "bucket_name": BUCKET_NAME  # Default bucket name
+                "bucket_name": BUCKET_NAME
             }
-            app_config_collection.insert_one(default_config)
-            logger.debug("Inserted default object storage config with bucket_name:", BUCKET_NAME)
+            if not config:
+                app_config_collection.insert_one(default_config)
+                logger.debug(f"Inserted default object storage config with bucket_name: {BUCKET_NAME}")
             config = default_config
         else:
-            logger.debug("Loaded object storage config with bucket_name:", config.get("bucket_name", BUCKET_NAME))
-    except Exception as e:
-        # If the collection doesn't exist or there's an error, use default settings
-        logger.error(f"Error accessing app_config collection: {e}")
-        config = {
-            "type": "object_storage",
-            "provider": "minio",
-            "endpoint_url": "http://localhost:9000",
-            "access_key": "Vsy33jISLyeTgdXllJOf",
-            "secret_key": "9keIpNj5hdbpdFeccFSgTR74imsgb8JvZQrpTqRv",
-            "bucket_name": BUCKET_NAME  # Default bucket name
-        }
+            logger.debug(f"Loaded object storage config with bucket_name: {config.get('bucket_name', BUCKET_NAME)}")
 
-    return boto3.client(
-        's3',
-        endpoint_url=config["endpoint_url"],
-        aws_access_key_id=config["access_key"],
-        aws_secret_access_key=config["secret_key"]
-    )
+        # Validate endpoint_url
+        if not config["endpoint_url"].startswith("http://") and not config["endpoint_url"].startswith("https://"):
+            raise ValueError(f"Invalid endpoint_url: {config['endpoint_url']} - must start with http:// or https://")
+
+        return boto3.client(
+            's3',
+            endpoint_url=config["endpoint_url"],
+            aws_access_key_id=config["access_key"],
+            aws_secret_access_key=config["secret_key"]
+        )
+    except Exception as e:
+        logger.error(f"Error creating S3 client: {e}")
+        raise
+
+    # return boto3.client(
+    #     's3',
+    #     endpoint_url=config["endpoint_url"],
+    #     aws_access_key_id=config["access_key"],
+    #     aws_secret_access_key=config["secret_key"]
+    # )
 
 # Initialize S3 client as a module-level variable
 s3 = get_s3_client()
