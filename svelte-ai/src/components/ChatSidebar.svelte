@@ -8,7 +8,6 @@
 
     let sidebarCollapsed = false;
 
-    // Function to delete a chat by chat_id
     async function deleteChat(chatId) {
         if (loading) return;
         if (
@@ -37,7 +36,6 @@
         }
     }
 
-    // Load chat history
     async function loadChatHistory() {
         try {
             const res = await fetch("http://localhost:5001/history");
@@ -49,12 +47,10 @@
         }
     }
 
-    // Toggle sidebar collapse state
     function toggleSidebar() {
         sidebarCollapsed = !sidebarCollapsed;
     }
 
-    // Load chat history on mount
     onMount(() => {
         loadChatHistory();
     });
@@ -69,53 +65,45 @@
     </div>
 
     {#if !sidebarCollapsed}
-        <h2 class="section-header">Chats</h2>
-        <div class="chat-list">
-            {#if loading}
-                <p class="loading-text">Loading chats...</p>
-            {:else if availableChats.length === 0}
-                <p class="no-chats-text">No chats available.</p>
-            {:else}
-                {#each availableChats as chat}
-                    <div class="chat-item" on:click={() => onSelectChat(chat.chat_id)}>
-                        <span class="chat-text">{chat.title}</span>
-                        <button
-                            class="delete-button"
-                            on:click|stopPropagation={() => deleteChat(chat.chat_id)}
-                            disabled={loading}
-                            aria-label={`Delete chat '${chat.title}'`}
-                        >
-                            ×
-                        </button>
-                    </div>
-                {/each}
-            {/if}
-        </div>
-        <button on:click={() => onSelectChat("")} disabled={loading} class="clear-button">Clear Selection</button>
-
-        <h2 class="section-header">Administrator</h2>
-        <div class="options-list">
-            <div class="option-item" on:click={() => onSelectOption("Settings")}>Settings</div>
-            <div class="option-item" on:click={() => onSelectOption("AppConfig")}>App Configuration</div>
-        </div>
-
-        <h2 class="section-header">User</h2>
-        <div class="options-list">
-            <div class="option-item" on:click={() => onSelectOption("Profile")}>Profile</div>
+        <div class="sidebar-content">
+            <h2 class="section-header">Chats</h2>
+            <div class="chat-list">
+                {#if loading}
+                    <p class="loading-text">Loading chats...</p>
+                {:else if availableChats.length === 0}
+                    <p class="no-chats-text">No chats available.</p>
+                {:else}
+                    {#each availableChats as chat}
+                        <div class="chat-item" on:click={() => onSelectChat(chat.chat_id)}>
+                            <span class="chat-text">{chat.title}</span>
+                            <button
+                                class="delete-button"
+                                on:click|stopPropagation={() => deleteChat(chat.chat_id)}
+                                disabled={loading}
+                                aria-label={`Delete chat '${chat.title}'`}
+                            >
+                                ×
+                            </button>
+                        </div>
+                    {/each}
+                {/if}
+            </div>
+            <button on:click={() => onSelectChat("")} disabled={loading} class="clear-button">Clear Selection</button>
         </div>
     {/if}
 </div>
 
 <style>
     .sidebar {
-        position: relative;
         width: 300px;
-        height: 100vh;
+        height: 100%; /* Inherit height from parent (.chat-area) */
         background-color: #f5f5f5;
         border-right: 1px solid #ccc;
         padding: 1em;
-        overflow-y: auto;
         transition: width 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Prevent sidebar from overflowing parent */
     }
 
     .sidebar.collapsed {
@@ -128,6 +116,7 @@
         align-items: center;
         justify-content: space-between;
         margin-bottom: 1em;
+        flex-shrink: 0; /* Prevent header from shrinking */
     }
 
     .logo {
@@ -150,6 +139,11 @@
 
     .toggle-button:hover {
         background-color: #ccc;
+    }
+
+    .sidebar-content {
+        flex: 1; /* Take remaining space */
+        overflow-y: auto; /* Scroll only within this content area if needed */
     }
 
     .section-header {
@@ -234,6 +228,7 @@
         cursor: pointer;
         margin-top: 1em;
         width: 100%;
+        flex-shrink: 0; /* Prevent button from shrinking */
     }
 
     .clear-button:disabled {
